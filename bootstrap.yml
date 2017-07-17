@@ -157,3 +157,7 @@
            vpc_id: {{ vpc_id }}
            subnet_id: {{ subnet_id }}
            secgroup_id: {{ secgroup_id }}
+
+     - name: display loadbalancer eip
+       debug:
+        msg: "{{ stack_create.stack.outputs }}"

@@ -125,3 +125,8 @@ resources:
       alarm_actions:
         - { get_attr: [ scaledown_policy, alarm_url] }
       comparison_operator: lt
+
+outputs:
+  ip:
+    description: EIP Loadbalancer
+    value: { get_attr: [elb_loadbalancer, vip_address ] }

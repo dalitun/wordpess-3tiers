@@ -1,4 +1,7 @@
-# fe
+# Wordpress 3 tiers
+
+D'abord il faut créer une image wordpress préconfiguré et puis 
+ajouter le script `mysql_conf.sh` dans le path `/home/cloud/mysql_conf.sh`
 
 
 Editez le fichier vars.yml 
@@ -40,7 +43,7 @@ replication_mode: async
 
 Pour Créer la stack wordpess 3 tiers: 
 
-cryptez les varibles vars.yml
+Cryptez les varibles vars.yml
 ```
 ansible-vault encrypt vars.yml
 ```
