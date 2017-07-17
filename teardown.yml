@@ -2,7 +2,7 @@
 - hosts: all
   tasks:
 
-     - name: create stack
+     - name: delete stack
        os_stack:
           name: "stack-wordpress"
           state: absent
