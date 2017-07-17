@@ -1,0 +1,127 @@
+heat_template_version: 2014-10-16
+
+description: Template that creates an autoscaling group.
+
+parameters:
+  key_name:
+    type: string
+    description: Name of an existing key pair to enable SSH access to the instance.
+  flavor:
+    type: string
+    description: Flavor to use for servers.
+    default: s1.medium
+  security_group:
+    type: string
+    description: Name of the security group to which the instances belongs to.
+  network:
+    type: string
+    description: Network to attach server to.
+  vpc_id:
+    type: string
+    description: Vpc id.
+  db_host:
+    type: string
+    description: WordPress database host
+  db_name:
+    type: string
+    description: WordPress database name
+    default: wordpress
+  db_root_password:
+    type: string
+    description: Root password for MySQL
+
+resources:
+
+  elb_loadbalancer:
+    type: OSE::ELB::LoadBalancer
+    properties:
+      name: loadbalancer
+      vpc_id: { get_param: vpc_id }
+      type: External
+      bandwidth: 300
+      admin_state_up: true
+
+  elb_listener:
+    type: OSE::ELB::Listener
+    properties:
+      name: elb_listener
+      loadbalancer_id: { get_resource: elb_loadbalancer }
+      protocol: HTTP
+      port: 80
+      backend_protocol: HTTP
+      backend_port: 80
+      lb_algorithm: leastconn
+      sticky_session_type: insert
+
+  elb_healthcheck:
+    type: OSE::ELB::HealthCheck
+    properties:
+      listener_id: { get_resource: elb_listener }
+      healthcheck_protocol: HTTP
+      healthcheck_timeout: 2
+      unhealthy_threshold: 3
+      healthcheck_interval: 5
+      healthy_threshold: 3
+      healthcheck_connect_port: 80
+      healthcheck_uri: /
+
+  autoscaling_group:
+    type: OS::Heat::AutoScalingGroup
+    properties:
+      cooldown: 300
+      desired_capacity: 1
+      min_size: 1
+      max_size: 3
+      resource:
+        type: lb-server.yaml
+        properties:
+          key_name: { get_param: key_name }
+          flavor: { get_param: flavor }
+          network: { get_param: network }
+          security_group: { get_param: security_group }
+          elb_listener: { get_resource: elb_listener }
+          db_root_password: { get_param: db_root_password }
+          db_name: { get_param: db_name }
+          db_host: { get_param: db_host }
+
+  scaleup_policy:
+    type: OS::Heat::ScalingPolicy
+    properties:
+      adjustment_type: change_in_capacity
+      auto_scaling_group_id: { get_resource: autoscaling_group }
+      cooldown: 300
+      scaling_adjustment: 1
+
+  cpu_alarm_high:
+    type: OSE::CES::Alarm
+    properties:
+      meter_name: cpu_util
+      resource_id: { get_resource: autoscaling_group }
+      statistic: max
+      period: 300
+      evaluation_periods: 1
+      threshold: 40
+      alarm_actions:
+        - { get_attr: [ scaleup_policy, alarm_url] }
+      comparison_operator: gt
+
+  scaledown_policy:
+    type: OS::Heat::ScalingPolicy
+    properties:
+      adjustment_type: change_in_capacity
+      auto_scaling_group_id: { get_resource: autoscaling_group }
+      cooldown: 300
+      scaling_adjustment: -1
+
+  cpu_alarm_low:
+    type: OSE::CES::Alarm
+    properties:
+      meter_name: cpu_util
+      resource_id: { get_resource: autoscaling_group }
+      statistic: max
+      period: 300
+      evaluation_periods: 2
+      threshold: 10
+      alarm_actions:
+        - { get_attr: [ scaledown_policy, alarm_url] }
+      comparison_operator: lt

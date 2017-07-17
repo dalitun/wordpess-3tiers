@@ -1,0 +1,24 @@
+{
+    "auth": {
+        "identity": {
+            "methods": [
+                "password"
+            ],
+            "password": {
+                "user": {
+                    "name": "{{ username }}",
+                    "password": "{{ password }}",
+                    "domain": {
+                        "name": "{{ domain }}"
+                    }
+                }
+            }
+        },
+        "scope": {
+            "project": {
+                "name": "{{ tenant_name }}"
+            }
+        }
+    }
+}
+

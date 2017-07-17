@@ -1,0 +1,159 @@
+---
+- hosts: all
+  tasks:
+     - name: GET TOKEN
+       uri:
+         url: "{{ iam_url }}/auth/tokens"
+         method: POST
+         body_format: raw
+         follow_redirects: all
+         status_code: 201
+         return_content: yes
+         validate_certs: yes
+         HEADER_Content-Type: "application/json"
+         body: "{{ lookup('template', 'files/token.json.j2',convert_data=True)|to_json }}"
+       register: token
+
+     - name: CREATE GROUPE SECURITY
+       uri:
+         url: "{{ vpc_url }}/security-groups"
+         method: POST
+         body_format: raw
+         follow_redirects: all
+         return_content: yes
+         validate_certs: yes
+         HEADER_Content-Type: "application/json"
+         HEADER_X-Auth-Token: "{{ token['x_subject_token'] }}"
+         body: "{{ lookup('template', 'files/secgroup.json.j2')|to_json }}"
+       register: secgroup
+
+
+     - name: get secgroup id
+       set_fact:
+          secgroup_id: "{{ secgroup.json.security_group.id }}"
+
+
+     - name: Secu groupe rules
+       uri:
+         url: "{{ vpc_url2 }}/security-group-rules"
+         method: POST
+         body_format: raw
+         follow_redirects: all
+         return_content: yes
+         validate_certs: yes
+         HEADER_Content-Type: "application/json"
+         HEADER_X-Auth-Token: "{{ token['x_subject_token'] }}"
+         body: "{{ lookup('template', 'files/secrules.json.j2')|to_json }}"
+       register: secgrouprule
+       ignore_errors: yes
+
+     - name: CREATE VPC
+       uri:
+         url: "{{ vpc_url }}/vpcs"
+         method: POST
+         body_format: raw
+         follow_redirects: all
+         return_content: yes
+         validate_certs: yes
+         HEADER_Content-Type: "application/json"
+         HEADER_X-Auth-Token: "{{ token['x_subject_token'] }}"
+         body: "{{ lookup('template', 'files/vpc.json.j2')|to_json }}"
+       register: vpc
+
+     - name: vpc id for create subnet
+       set_fact:
+           vpc_id: "{{ vpc.json.vpc.id }}"
+
+
+     - name: CREATE SUBNET on zone
+       uri:
+         url: "{{ vpc_url }}/subnets"
+         method: POST
+         body_format: raw
+         follow_redirects: all
+         return_content: yes
+         validate_certs: yes
+         HEADER_Content-Type: "application/json"
+         HEADER_X-Auth-Token: "{{ token['x_subject_token'] }}"
+         body: "{{ lookup('template', 'files/subnet.json.j2')|to_json }}"
+       register: subnet
+
+     - name: subnet
+       set_fact:
+         subnet_id: "{{ subnet.json.subnet.id }}"
+
+     - pause:
+         seconds: 20
+
+     - name: CREATE RDS
+       uri:
+         url: "{{ rds_url }}/instances"
+         method: POST
+         body_format: json
+         follow_redirects: all
+         return_content: yes
+         validate_certs: yes
+         HEADER_Content-Type: "application/json"
+         HEADER_X-Auth-Token: "{{ token['x_subject_token'] }}"
+         HEADER_X-Language: "en-us"
+         body: '{ "instance": {"name": "{{ rds_name }}","datastore": {"type": "MySQL","version": "{{ mysql_version }}"},"flavorRef": "{{ flavor }}","volume": {"type": "COMMON","size": 100 },"region": "{{ region }}","availabilityZone": "{{ availability_zone }}","vpc": "{{ vpc_id }}","nics": {"subnetId": "{{ subnet_id }}"},"securityGroup": {"id": "{{ security_group_id }}"},"backupStrategy": {"startTime": "00:00:00","keepDays": 3},"dbRtPd": "{{ root_password }}","ha": { "enable": true,"replicationMode":"{{ replication_mode }}"}}}'
+       register: rds
+       ignore_errors: yes
+
+     - name: rds id
+       set_fact:
+          rds_id: "{{ rds.json.instance.id }}"
+
+
+     - name: WAIT RDS IP
+       uri:
+         url: "{{ rds_url }}/instances/{{ rds_id }}"
+         method: GET
+         return_content: yes
+         validate_certs: yes
+         follow_redirects: all
+         HEADER_Content-Type: "application/json"
+         HEADER_X-Auth-Token: "{{ token['x_subject_token'] }}"
+         HEADER_X-Language: "en-us"
+       register: result
+       until: result.json.instance.status == 'ACTIVE'
+       retries: 100
+       delay: 30
+
+       ignore_errors: yes
+
+     - name: get rds ip
+       set_fact:
+          rds_ip: "{{ result.json.instance.hostname }}"
+
+
+     - name: create stack
+       ignore_errors: True
+       register: stack_create
+       os_stack:
+          name: "stack-wordpress"
+          state: present
+          template: "heat/autoscaling-server.yaml"
+          parameters:
+              key_name: "{{ keypair_name }}"
+              vpc_id: "{{ vpc_id }}"
+              network: "{{ subnet_id }}"
+              security_group: "{{ secgroup_name }}"
+              db_host: "{{ rds_ip }}"
+              db_root_password: "{{ root_password }}"
+
+
+
+     - name: touch teardown-vars.yml
+       file:
+          path: teardown-vars.yml
+          state: touch
+
+     - name: Add variables
+       blockinfile:
+         path: teardown-vars.yml
+         block: |
+           rds_id: {{ rds_id }}
+           vpc_id: {{ vpc_id }}
+           subnet_id: {{ subnet_id }}
+           secgroup_id: {{ secgroup_id }}
