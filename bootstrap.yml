@@ -143,7 +143,6 @@
               db_root_password: "{{ root_password }}"
 
 
-
      - name: touch teardown-vars.yml
        file:
           path: teardown-vars.yml
@@ -158,6 +157,7 @@
            subnet_id: {{ subnet_id }}
            secgroup_id: {{ secgroup_id }}
 
-     - name: display loadbalancer eip
+     - name: EIP Loadbalancer
        debug:
-        msg: "{{ stack_create.stack.outputs }}"
+         msg: "{{ stack_create.stack.outputs }}"
+
